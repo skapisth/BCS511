@@ -1,0 +1,22 @@
+---
+title: "plottingAssnment"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+I am an R Markdown document :D. I am plotting the diamonds dataset:
+
+```{r, echo=FALSE}
+library(ggplot2)
+ggplot(data = diamonds) +
+  geom_bar(mapping = aes(x=cut, fill = clarity), position = "dodge")
+```
+
+
+
