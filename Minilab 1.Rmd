@@ -1,0 +1,297 @@
+---
+title: "BCS 511 Minilab 1 - Psychometric and neurometric analyses"
+author: "Sanjana Kapisthalam"
+date: "10/7/2019"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  word_document:
+    toc: no
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: yes
+    toc: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, results = "markup", 
+  fig.align = "center", fig.width = 8)
+
+options(width = 100) 
+```
+
+# Goal of this minilab
+In this minilab, you will assess how the *assumptions* in the analysis of behavioral data can affect the outcomes. Specifically, you will explore and question a common assumption made when interpreting the information encoded in neural firing rates.
+
+In the data wrangling tutorial, we saw that the neural responses of a *single neuron* can contain all the information necessary to predict an animal's choice (recall the near-identity of the ideal observer's predictions based on the ROC analysis with the monkey's choices). From Zaidel, DeAngelis, & Angelaki (2017, p. 2):
+
+> The observation that activity of single sensory neurons in the brain can predict perceptual decisions, even before they are reported by the subject, has generated substantial and continued interest. This result has been corroborated by widespread findings of significant choice probabilities
+(CPs; a metric that quantifies the relationship between neuronal activity and perceptual decisions across repeated presentation of a stimulus).
+
+However, as Zaidel et al further note (p. 1-2), the interpretation of CPs is complex: high CPs could be driven by bottom-up processing (i.e., information about the stimulus being fed forward to the neuron) or by top-down feedback from decision areas. Neural responses might correlate with choice simply because neural responses correlate with the stimulus and choice also correlates with the stimulus. Zaidel et al use linear regression to tease apare influences of stimulus and choice on neural spike rates, and compare this approach to CP. They find CPs are a problematic measure.
+
+In this minilab, you will extend their analysis to new data, and you will go one step further to assess the assumptions made in the linear regression approach in Zaidel et al. For this purpose you will analyze neurons in middle temporal (MT) code, using the same data set from Uka and DeAngelis (2003) that you've worked with in the data wrangling and visualization tutorials.  
+
+
+## Guidelines for collaboration 
+Please answer the following questions in an R markdown report submitted each weak of the minilab. Describe your analysis plan. Try to get as far as you can. If you get stuck in R, try to describe in your own words what you're trying to achieve. You can also add hand-drown figures to the report, as long as you import them (e.g., take a photo of a plot with your phone and add it to the report.)
+
+You can ask other class members and the instructor for help at any point. Please us the slack channel #general for that. This ensures that everyone benefits from whatever answers are provided, and that everyone has access to the same resources. There is not limit to the collaboration you can engage in, as long as it is through the slack channel.
+
+**Be prepared to present your solutions during the next class.** 
+
+## Week 1
+ 
+1. Visualize the relation between *Stimulus* (x-axis), *Choice* (color), and spike rates (*Spikes*, y-axes). Do so for at least 20 cells. Is the effect of *Stimulus* linear? Pointers:
+
+    a. Create a figure that contains the raw data, appropriate axis labels, legends, etc.
+    b. Make sure to distinguish between different animals, cells, and runs.
+    c. You might find it useful to use trendlines to address this question.
+
+```{r libraries, results='hide', message=FALSE}
+library("tidyverse")
+library("magrittr")
+library("mgcv")      # for GAMMs
+library("broom")     # for elegant handling of model outputs
+
+
+
+load("~/Desktop/BehavioralScience/BCS511minilab1/data/spikes.rda")
+theme_set(theme_bw())
+
+# load data from library 
+#data(spikes)
+d = spikes
+
+# adding Stimulus variable
+spikes %<>%
+  mutate(
+    Stimulus = BinocularR * DisparityFar
+  )
+``` 
+```{r}
+# subsetting 20 cells
+#c = c("c101","c103","c104","c105","c106","c107","c110","c111","c112","c114","c115","c116","c117","c118","c119","c120","c121","c123","c125","c126")
+d = spikes %>% 
+  #mutate(Choice = as.character(as.numeric(ID))) %>%
+  filter(BinocularR != 0, 
+          ID %in% sample(levels(.$ID), 20))
+  #subset(Cell %in% c)
+#plotting raw data altogether
+```
+
+```{r}
+p = d %>% 
+  ggplot(aes(x = Stimulus, y = Spikes, color = as.factor(Choice))) +
+  geom_point(size = 0.1, position = position_jitter(height = 0.01)) +
+  facet_wrap(~ID, ncol = 5) +
+  geom_smooth(method = glm) + 
+  scale_x_continuous("Stimulus") +
+  scale_color_discrete("Choice",
+    breaks = c("-1", "1"),
+    labels = c("near", "far")) +
+  scale_y_continuous("Spikes") 
+  #scale_linetype_discrete(
+   # breaks = c("m1", "m2"),
+    #labels = paste("Monkey", c(1,2))) +
+  #coord_cartesian(c(-0.1,0.1))
+p
+```
+   
+2. Visualize the prediction of a linear model (LM) that predicts *Spikes* from additive effects of *Stimulus* and *Choice* (i.e., no interaction between the *Stimulus* and *Choice* is included in the model). Compare this to the visualization created in the first step. How do the two plots differ and why?
+
+```{r}
+m1 = lm(Spikes ~ Stimulus + Choice, data = d)
+summary(m1)
+```
+
+3. Using the same LM, calculate the partial correlation between *Choice* and *Spikes* for all unique combination of Animal, Cell, and Run. This is the measure Zaidel et al propose as a correction of the traditional approach (choice probabilities). Pointers:
+
+    a. We can use the t-statistic of *Choice* in the LM as an estimate of the partial correlation with *Spikes*. Think about why that is the case.
+    b. Broom's tidy() function allows us to extract coefficients from a model.
+    
+```{r}
+d.models = 
+  d %>%
+  group_by(ID) %>%
+  do(
+    model = glm(Spikes ~ 1 + Stimulus + Choice, family = gaussian(identity), data = .)
+  ) 
+```
+
+
+```{r, echo=T}
+d.models %>%
+  droplevels() %>%
+  glance(model)
+```
+```{r}
+d.models %>%
+  droplevels() %>%
+  # Set parametric to FALSE if you want the smooth terms instead (for gams only)
+  tidy(model, parametric = T)
+
+```
+Pretty much all cases p-value for choice seems to be very significant. 
+
+```{r}
+d.models %>%
+  droplevels() %>%
+  augment(model)
+```
+
+
+```{r}
+d.models3 = d %>%
+  group_by(ID) %>%
+  nest() 
+
+print(d.models3)
+
+d.models3 %<>%
+  mutate(
+    model = map(data, function(x) glm(Spikes ~ 1 + Stimulus + Choice, data = x)),
+    coefs = map(model, tidy),
+    goodness = map(model, glance),
+    prediction = map(model, augment)
+  )
+
+print(d.models3)
+```
+
+```{r}
+d.models3 %>%
+  unnest(prediction, .drop = T)
+```
+
+
+
+**BONUS:**
+
+4. Calculate Choice Probabilities (CPs) for all unique combination of Animal, Cell, and Run. Compare them to the partial correlations obtained under point 3. Pointers:
+
+     a. CPs are related to the ROC analysis presented in the data wrangling tutorial. For more detail, see Zaidel et al. (2017, Method section, p. 12). Specifically, we are interested in the 'grand' CP of each unique combination of Animal, Cell, and Run (i.e., for each unique recording *ID*). For this we 1) z-score (=subtract mean and divide by SD) neural firing rates *within* each binocular correlation condition, 2) we pool all the data across the different binocular correlation conditions (for that recoring ID), 3) calculate the ROC over this pooled data (rather than separately for each binocular correlation---i.e., each unique combination of Animal, Cell, and Run will have on *one* ROC), and 4) obtain the area under the curve for that ROC. That's our CP for that unique combination of Animal, Cell, and Run.
+     b. We can plot CPs against partial correlations or test the correlation between these two values.
+
+
+## Week 2
+
+5. Do linear fits to the data (using only additive effects of *Stimulus* and *Choice* on *Spikes*) generally miss something about the data, compared fits that allow non-linear effects of *Stimulus*? Pointers:
+
+    a. Take advantage of GAMs (e.g., through the gam() function in the *mgcv* package)/
+    b. Use *dplyr*'s do() and the *broom* package to fit models to different cells. You can extract model's goodness of fit statistics through broom's glance(). For example, the Bayesian Information Criterion ([BIC](https://en.wikipedia.org/wiki/Bayesian_information_criterion)) provides a general measure of a model's data coverage while also penalizing more complex models (such as GAMs with high degrees of non-linearity).
+    
+    
+```{r}
+d.models2 = 
+  d %>%
+  group_by(ID) %>%
+  do(
+    model = gam(Spikes ~ 1 + s(Stimulus) + Choice, family = gaussian(identity), data = .)
+  ) 
+```
+
+```{r}
+d.models2 %>%
+  droplevels() %>%
+  glance(model)
+```
+
+
+```{r}
+d.models2 %>%
+  droplevels() %>%
+  # Set parametric to FALSE if you want the smooth terms instead (for gams only)
+  tidy(model, parametric = T)
+```
+6. Do your findings with regard to question 2.1 mean that the estimates of the effect of *Choice* are biased in the linear model? Pointers:
+
+    a. Worse fit does not mean biased fit.
+    
+```{r}
+d.models %>%
+  droplevels() %>%
+  glance(model) 
+
+
+d.models2 %>%
+  droplevels() %>%
+  glance(model)
+```
+
+7. Even if linear fits do not on average lead to biased estimates, the might be misleading for some cells. Identify the 5-10 cells for which the inferred choice effect differs most strongly depending on whether you make the linearity assumption (use an LM) or not (use a GAM).
+
+**BONUS:**
+
+8. Can you give a general recommendation to researchers when they should use GAMs instead of LMs to estimate choice effects.
+
+LMs assume a fixed linear or some other parametric form of the relationship between the dependent variable and the covariates while GAMs do not assume a priori any specific form of this relationship, and can be used to reveal and estimate non-linear effects of the covariate on the dependent variable.
+
+So based on this explanation I would recommend - 
+- Use GAMs when the data structure seems additive i.e., if additions of x results in prediction of y or when the data does not have any linear shape
+- Use LMs when linearity is assumed with your data
+
+
+
+```
+## Ouick overview of broom
+One efficient way to apply models to many cells is through *dplyr*'s general purpose verb do(), which underlies the more commonly used verbs like summarise(), mutate(), etc.:
+
+```{r}
+d.models = 
+  spikes %>%
+  group_by(ID) %>%
+  do(
+    model = glm(Spikes ~ 1 + Stimulus + Choice, family = gaussian(identity), data = .)
+  ) 
+```
+
+*Broom* makes it easy to extract information from R models, such as lm(), glm(), and gam() fits. For example, glance() allows you to extract goodness of fit measures from each of these different types of models; tidy() extracts the coefficients, standard errors, statistics, and p-values into a data.frame; augment() gets the case-by-case predictions from a model and attaches them to a data.frame. Make sure to read the helpfiles, e.g., help(augment.lm).
+
+```{r, echo=T}
+d.models %>%
+  glance(model)
+
+d.models %>%
+  # Set parametric to FALSE if you want the smooth terms instead (for gams only)
+  tidy(model, parametric = T) 
+
+d.models %>%
+  augment(model)
+```
+
+Another way to what we achieved above is to *nest* all the grouped data (essentiall making a tibble within the tibble) and then use *purrr*'s awesome map() function to map the list of nested tibbles (the column called data) into the regression model as well as all its different summaries---simply via mutate():
+
+```{r}
+d.models = spikes %>%
+  group_by(ID) %>%
+  nest() 
+
+print(d.models)
+
+d.models %<>%
+  mutate(
+    model = map(data, function(x) glm(Spikes ~ 1 + Stimulus + Choice, data = x)),
+    coefs = map(model, tidy),
+    goodness = map(model, glance),
+    prediction = map(model, augment)
+  )
+
+print(d.models)
+```
+This tibble now contains the data and models for all cells, along with the coefficients (and their SEs, statistics, p-values), goodness of fit measures (AIC, BIC, etc.), and predictions. We can look at any of these by unnesting that part. E.g.:
+
+```{r}
+d.models %>%
+  unnest(prediction, .drop = T)
+```
+
+This is very powerful. For example, it allows us to extract the coefficients and their CIs across many cells, which might come in handy for your lab.
+
+
+# Session info
+```{r session_info, echo=FALSE, results='markup'}
+devtools::session_info()
+```

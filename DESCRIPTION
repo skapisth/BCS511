@@ -1,0 +1,14 @@
+Package: BCS511minilab1
+Title: Data Set for BCS 511 Mini Lab I. 
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Sanjana",
+           family = "Kapisthalam",
+           role = c("aut", "cre"),
+           email = "skapisth@ur.rochester.edu",
+           comment = c(ORCID = "0000-0002-1158-7308"))
+Description: Neural spike data along with behavioral choices and information about stimulus.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.1.1.9000
