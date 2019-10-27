@@ -58,7 +58,8 @@ library("broom")     # for elegant handling of model outputs
 
 
 
-load("~/Desktop/BehavioralScience/BCS511minilab1/data/spikes.rda")
+#load("~/Desktop/BehavioralScience/BCS511minilab1/data/spikes.rda")
+load("~/BCS511minilab1-master/BCS511minilab1-master/data/spikes.rda")
 theme_set(theme_bw())
 
 # load data from library 
@@ -73,13 +74,10 @@ spikes %<>%
 ``` 
 ```{r}
 # subsetting 20 cells
-#c = c("c101","c103","c104","c105","c106","c107","c110","c111","c112","c114","c115","c116","c117","c118","c119","c120","c121","c123","c125","c126")
 d = spikes %>% 
-  #mutate(Choice = as.character(as.numeric(ID))) %>%
   filter(BinocularR != 0, 
           ID %in% sample(levels(.$ID), 20))
-  #subset(Cell %in% c)
-#plotting raw data altogether
+  
 ```
 
 ```{r}
@@ -87,25 +85,44 @@ p = d %>%
   ggplot(aes(x = Stimulus, y = Spikes, color = as.factor(Choice))) +
   geom_point(size = 0.1, position = position_jitter(height = 0.01)) +
   facet_wrap(~ID, ncol = 5) +
-  geom_smooth(method = glm) + 
+  geom_smooth() + 
   scale_x_continuous("Stimulus") +
   scale_color_discrete("Choice",
     breaks = c("-1", "1"),
     labels = c("near", "far")) +
   scale_y_continuous("Spikes") 
-  #scale_linetype_discrete(
-   # breaks = c("m1", "m2"),
-    #labels = paste("Monkey", c(1,2))) +
-  #coord_cartesian(c(-0.1,0.1))
+ 
 p
 ```
+
+Stimulus and Choice effect on neural spike rate for 20 runs(cells) can be seen in the above plot. Red lines are for when animals chose near, and blue lines are when animals chose far. 
+
+The effect of stimulus seems to be mostly non-linear. It can also be seen that stimus is morre negative indicating its more near biased.
    
 2. Visualize the prediction of a linear model (LM) that predicts *Spikes* from additive effects of *Stimulus* and *Choice* (i.e., no interaction between the *Stimulus* and *Choice* is included in the model). Compare this to the visualization created in the first step. How do the two plots differ and why?
 
 ```{r}
-m1 = lm(Spikes ~ Stimulus + Choice, data = d)
-summary(m1)
+d.ce = d %>%
+  group_by(ID) %>%
+  nest() %>%
+  mutate (
+    fit = map(data, .f = function(x) glm(Spikes ~ 1+Stimulus+Choice, data = x)),
+    coeffs = map(fit, fortify),
+  ) %>%
+  unnest(coeffs)
+
+p2 = d.ce %>%
+  group_by(ID) %>%
+  ggplot(mapping = aes(x=Stimulus, y=Spikes, color=as.factor(Choice)), data = .) +
+  geom_point(size = 0.1, position = position_jitter(height = 0.01)) +
+  geom_line(mapping = aes(x=Stimulus, y=.fitted, color=as.factor(Choice))) +
+  facet_wrap(~ID, ncol = 4)
+
+p2
 ```
+
+There is no interaction seen between Choice and the stimulus here. Effect of stimulus looks to be linear here.
+
 
 3. Using the same LM, calculate the partial correlation between *Choice* and *Spikes* for all unique combination of Animal, Cell, and Run. This is the measure Zaidel et al propose as a correction of the traditional approach (choice probabilities). Pointers:
 
@@ -113,58 +130,43 @@ summary(m1)
     b. Broom's tidy() function allows us to extract coefficients from a model.
     
 ```{r}
+# include all cells in the following analysis
+#d = spikes
+
 d.models = 
   d %>%
   group_by(ID) %>%
   do(
     model = glm(Spikes ~ 1 + Stimulus + Choice, family = gaussian(identity), data = .)
   ) 
+
+d.lm = d.models
 ```
 
 
-```{r, echo=T}
-d.models %>%
+```{r}
+d.glance = d.models %>%
   droplevels() %>%
   glance(model)
+d.glance
 ```
+
 ```{r}
-d.models %>%
+a = d.models %>%
   droplevels() %>%
   # Set parametric to FALSE if you want the smooth terms instead (for gams only)
   tidy(model, parametric = T)
-
+a
 ```
-Pretty much all cases p-value for choice seems to be very significant. 
-
 ```{r}
 d.models %>%
   droplevels() %>%
   augment(model)
 ```
 
+ In the above table we can see  the partial correlation of choice and stimulus on spike rates, under a linear model.
+Pretty much all cases p-value for choice seems to be very significant. 
 
-```{r}
-d.models3 = d %>%
-  group_by(ID) %>%
-  nest() 
-
-print(d.models3)
-
-d.models3 %<>%
-  mutate(
-    model = map(data, function(x) glm(Spikes ~ 1 + Stimulus + Choice, data = x)),
-    coefs = map(model, tidy),
-    goodness = map(model, glance),
-    prediction = map(model, augment)
-  )
-
-print(d.models3)
-```
-
-```{r}
-d.models3 %>%
-  unnest(prediction, .drop = T)
-```
 
 
 
@@ -188,40 +190,81 @@ d.models3 %>%
 d.models2 = 
   d %>%
   group_by(ID) %>%
-  do(
+  do(Spikes = .$Spikes, Stimulus = .$Stimulus, Choice = .$Choice,
     model = gam(Spikes ~ 1 + s(Stimulus) + Choice, family = gaussian(identity), data = .)
   ) 
+
+d.gam = d.models2
 ```
 
 ```{r}
-d.models2 %>%
+d.glance2 = d.models2 %>%
   droplevels() %>%
   glance(model)
+
+d.glance2
+
 ```
+This table shows the summary of when GAM is fitted to the 20 cells.
 
 
 ```{r}
-d.models2 %>%
-  droplevels() %>%
-  # Set parametric to FALSE if you want the smooth terms instead (for gams only)
-  tidy(model, parametric = T)
+d.AIC = d.glance %>% 
+  rename(AIC_lm = AIC) %>% 
+  select(ID, AIC_lm) %>% 
+  left_join(
+    d.glance2 %>% 
+      rename(AIC_gam = AIC) %>% 
+      select(ID, AIC_gam)) %>%
+  mutate(lm_better = AIC_gam > AIC_lm) %>%
+  ungroup() 
+
+d.AIC %>% 
+  summarise(new = mean(lm_better))
+
 ```
+The number above shows how frequently the linear model fits better than the general additive model. Here, the goodness of fit is measured by AIC. 
+
+
+
 6. Do your findings with regard to question 2.1 mean that the estimates of the effect of *Choice* are biased in the linear model? Pointers:
 
     a. Worse fit does not mean biased fit.
     
 ```{r}
-d.models %>%
+d.stat = d.lm %>%
   droplevels() %>%
-  glance(model) 
+  # Set parametric to FALSE if you want the smooth terms instead (for gams only)
+  tidy(model, parametric = T) %>%
+  filter(term == 'Choice') %>%
+  select(ID, term, statistic) %>%
+  left_join(d.gam %>%
+              droplevels() %>%
+              tidy(model, parametric = T)%>%
+              filter(term == 'Choice') %>%
+              
+              select(ID, term, statistic) %>%
+              rename(statistic_gam = statistic))
 
 
-d.models2 %>%
-  droplevels() %>%
-  glance(model)
+d.stat %>%
+  ggplot(mapping = aes(x = statistic, y = statistic_gam)) +
+  geom_point() +
+  geom_smooth(method = "lm")
 ```
 
+From the above plot relationship of Choice effect can be seen in both models. It can be seen that there is a difference in how the goodness of fit varies for the two  models but they do not seem to differ in the estimate of choice effect.  The LM is either not biased in predicting choice effect, or it has the same bias as the GAM model.
+
 7. Even if linear fits do not on average lead to biased estimates, the might be misleading for some cells. Identify the 5-10 cells for which the inferred choice effect differs most strongly depending on whether you make the linearity assumption (use an LM) or not (use a GAM).
+
+```{r}
+d.AIC %>% 
+  left_join(d.stat) %>%
+  mutate(AIC_diff = AIC_lm - AIC_gam, stat_diff = statistic - statistic_gam) %>%
+  ggplot(mapping = aes(x = AIC_diff, y = stat_diff)) +
+  geom_point()
+```
+In the above graph we can see the difference in AIC score of the two models. Both AIC and the statistics difference seems to be high showing no predictive outcome strongly.
 
 **BONUS:**
 
@@ -232,6 +275,9 @@ LMs assume a fixed linear or some other parametric form of the relationship betw
 So based on this explanation I would recommend - 
 - Use GAMs when the data structure seems additive i.e., if additions of x results in prediction of y or when the data does not have any linear shape
 - Use LMs when linearity is assumed with your data
+
+Even though LM is not a biased model it might not be able to capture all or some aspects of data. From everything shown in this minilab, it can be seen that clearly in some cell there's non-linearity. But it's not really biased towards the Choice effect. Hence my recommendation would b e to get the gist of the data being analyzed in way that the data fits properly. GAM will be the way to go then but in many cases LM could also be chosen since it's not biased.
+
 
 
 
