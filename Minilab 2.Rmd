@@ -1,6 +1,6 @@
 ---
 title: "BCS 511 Minilab 2 - Psychophysics: Sex-related differences in motion processing?"
-author: "T. Florian Jaeger"
+author: "Sanjana Kapisthalam"
 date: "11/1/2019"
 output:
   html_document:
@@ -139,46 +139,37 @@ HINT: All analyses in Week 1 analyze summary data, with one observation per part
     b. To analyze sex-related effects you can use *t*-test or (equivalently) linear model analysis. If you're using a linear model, don't forget to sum code the factor *Sex* if you you want to assess main effects. The function *prepVars* in this document shows one way to do that.
     c. You can take advantage of *gather*, *spread*, and *broom* to create the various plots and models you need. 
     
-```{r visualizing}
-d %>%
-  ggplot(mapping = (aes(x=as.factor(Sex), y = Rmax))) +
-  geom_violin()
+```{r selectData}
+d %<>% select(Subject, Sex, Task, Rmax, Slope, C50, Asymp, LogAsymp, LogC50, VideoGaming,
+              EmphatizingQuotient, SystemizingQuotient, ADHD, AutismQuotient) %>%
+  na.omit(d) %>%
+  distinct()
 
 ```
-```{r v}
-d %>%
-    mutate_at(
-      vars(
-        one_of(
-          c(
-            "Contrast", 
-            "LogDuration", 
-            "EmphatizingQuotient", 
-            "SystemizingQuotient", 
-            "AutismQuotient", 
-            "ADHD"))),
-      .funs = funs(c = myCenter)
-    ) %>%
-    mutate_at(
-      c("Sex", "VideoGaming"),
-      .fun = factor
-    )
-#contrasts(d$Sex) = cbind("Female vs. Male" = c(-1,1))
+
+    
+```{r vis}
+d.summary = d
+ggplot(d.summary, aes(x = Rmax, fill = as.factor(Sex))) + geom_histogram(position = "dodge")
+ggplot(d.summary, aes(x = C50, fill = as.factor(Sex))) + geom_histogram(position = "dodge")
+ggplot(d.summary, aes(x = Slope, fill = as.factor(Sex))) + geom_histogram(position = "dodge")
 
 ```
+
 
 ```{r test}
 
-rM = 
-  d %>%
-  #group_by(Sex) %>%
-  lm(Rmax~ Sex ,family = gaussian(identity), data = .)
- 
-summary(rM)
+lm_mod1 <- lm(data = d.summary, Rmax~as.factor(Sex))
+tidy(lm_mod1) #(larger Rmax, higher convergence)
+lm_mod2 <- lm(data = d.summary, C50~as.factor(Sex))
+tidy(lm_mod2)
+lm_mod3 <- lm(data = d.summary, Slope~as.factor(Sex))
+tidy(lm_mod3)
 
 ```
-
-Sex seem to be a significant factor here with a p-val of 0.00281 and smaller the slope the more significant it seem to be. 
+We conducted a linear model analysis to determine if sex plays a significant effect on the model parameters and it can be seen that
+Sex seem sto be a significant factor here with a p-val < 0.05 for all parameters.
+Also, larger the rmax value is higher is the convergence. Thus from the above results, we can say that females have lower Rmax than males meaning that they have higher duration threshold.
 
 ```{r visualizing }
 d %>%
@@ -203,20 +194,108 @@ summary(aSymp)
 
 laSymp = 
   d %>%
-  #group_by(Sex) %>%
   lm(LogAsymp ~ Sex ,family = gaussian(identity), data = .)
  
 summary(laSymp)
 
 ```
- I did not really understand what +/-3 SD mean but looks like predictions for asymp and log asymp    looks very significant with a p-val < 2.2e-16
+There is a significant effect of sex on Asymp but not on Log Asymp.
+
+```{r ttest}
+t.test(data = d, Asymp ~ as.factor(Sex))
+t.test(data = d, LogAsymp ~ as.factor(Sex))
+```
+
+I did t-test just to see how the results look like when compared to the linear model. As it should be, we can see that sex seem to be significant Asymp but not for logAsymp.
+
+
 3. In your analysis of the four Naka-Rushton parameters, you might find significant effects of *Sex* on some, but not all, parameters. Does this mean that we can safely conclude that the different parameters differ qualitatively in how they are affected by participants' sex? How could you use linear models to test whether the sex-related effects differ significantly between the four parameters of the Naka-Rushton model? HINTS:
 
     a. Think about what interactions allow you to test.
     b. The coefficient report that is part of the standard output of a linear model provides us with the effect of each individual parameter. If we want to know whether a multi-level factor and/or all of its interactions has a significant effect (i.e., whether all parameters that result from the coding of the factor *together* add significantly to the model fit), we can do so via nested model comparison. The R command for nest model comparison is *anova(smaller nested model, larger nesting model, test = "Chisq")*. This conducts a $\chi^2$-test over the difference in deviance between the models. The DFs of the $\chi^2$-test correspond to the difference in the number of parameters between the smaller and larger model (for sufficiently large data sets, the difference in deviance between nested models approximates a $\chi^2$ distribution).
     c. You might have to wrangle the data into a shape that allows you to analyze all parameters in one model. *gather* might come in handy.
-   
+
+```{r definingModels}
+lm_aut = lm(data = d.summary, Rmax~as.factor(Sex + AutismQuotient))
+lm_int = lm(data = d.summary, Rmax~as.factor(Sex + AutismQuotient)+as.factor(Sex * AutismQuotient))
+
+```
+
+```{r anova}
+anova(lm_aut, lm_int, test = "Chisq")    
+
+```
+Interaction does not show much here.
+
+
 4. Extend the analyses of Steps 1-2 to the two other tasks ("Angular", "Mask"). Do the results differ for these tasks? Are those differences significant?
+
+```{r Ang}
+d.Ang = d %>% filter(Task == "Angular")
+d.Ang %>%
+  ggplot(mapping = (aes(x = Rmax,fill = as.factor(Sex)))) +
+  geom_histogram()
+d.Ang %>%
+  ggplot(mapping = (aes(x = C50,fill = as.factor(Sex)))) +
+  geom_histogram()
+d.Ang %>%
+  ggplot(mapping = (aes(x = Slope,fill = as.factor(Sex)))) +
+  geom_histogram()
+```
+```{r modAngRmax}
+modAngRmax = d.Ang %>%
+  lm(Rmax ~ Sex, data = .)
+summary(modAngRmax)
+```
+We fit a linear model for the angular task to see if sex plays any significance on the model parametrs and it can be seen that it does not have a significant effect on Rmax
+
+```{r modAngC50}
+modAngC50 = d.Ang %>%
+  lm(C50 ~ Sex, data = .)
+summary(modAngC50)
+```
+There is no significant of sex on C50 as well which can be seen from abobe where p-val == 0.6.
+
+```{r modAngSlope}
+modAngSlope = d.Ang %>%
+  lm(Slope ~ Sex, data = .)
+summary(modAngSlope)
+```
+There is no significant of sex on C50 as well which can be seen from abobe where p-val == 0.5.
+
+```{r mask}
+d.msk = d %>% filter(Task == "Mask")
+d.msk%>%
+  ggplot(mapping = (aes(x = Rmax,fill = as.factor(Sex)))) +
+  geom_histogram()
+d.msk%>%
+  ggplot(mapping = (aes(x = C50,fill = as.factor(Sex)))) +
+  geom_histogram()
+d.msk %>%
+  ggplot(mapping = (aes(x = Slope,fill = as.factor(Sex)))) +
+  geom_histogram()
+```
+
+
+```{r maskTasksmod}
+modmskRmax = d.msk %>%
+  lm(C50 ~ Sex, data = .)
+summary(modmskRmax)
+
+
+modmskC50 = d.msk %>%
+  lm(C50 ~ Sex, data = .)
+summary(modmskC50)
+
+modmskSlope = d.msk %>%
+  lm(Slope ~ Sex, data = .)
+summary(modmskSlope)
+```
+
+Sex does not have any significant effect on either of the model parameters even in the mask task which can be seen from above where p-val > 0.05 in all the cases.
+
+
+In conclusion, we can now say that for both angular and mask tasks, sex does not have any significant effect on any of the model parameters.
 
 5. Next, explore to what extent the sex-related effects might be mediated through any of the five individual difference variables. For this analysis, you can limit yourself to the *Rmax* parameter and the motion *Task*. Begin by visualize the effects of the individual difference variables on *Rmax*. Then assess the correlations between the different individual difference variables. If they are correlated with each other and/or *Sex*, then try to tease apart the effects of the different variables (incl. *Sex*) on *Rmax*. HINTS:
 
@@ -224,14 +303,25 @@ summary(laSymp)
     b. Note that *collinearity* between multiple predictors can affect the standard error estimates (and thus p-values) of the coefficients. Nested model comparison can be useful in this context. 
     c. Note, however, that there is no free lunch. Explorative model building---either "forward" by adding predictors to a model, or "backwards model reduction" by removing predictors from the full model---inevitably increases the number of tests we conduct, and thus the number of false significances (Type I error) we will get just by chance (Harrell, 2001 provides a succinct summary of this problem). It's thus best to first state your hypothesis and then conduct as few tests as possible.
 
-```{r}
-d %>%
-  ggplot(mapping = (aes( x= AutismQuotient, y = Rmax))) +
-  geom_point()
+```{r fullMod}
+allMod = d %>%
+  lm(Rmax ~ Sex + AutismQuotient + VideoGaming + SystemizingQuotient + ADHD, data = .)
+summary(allMod)
 
 ```
-Autism quotient does not look linear with respect to Rmax
+```{r}
+mAutQ = lm(AutismQuotient ~ Sex, data = d.summary)
+summary(mAutQ)
+mVidGame = lm(VideoGaming ~ Sex, data = d.summary)
+summary(mVidGame)
+mSysQ = lm(SystemizingQuotient ~ Sex, data = d.summary)
+summary(mSysQ)
+mADHD = lm(ADHD ~ Sex, data = d.summary)
+summary(mADHD)
+```
 
+
+We fit a linear model to see if sex has any significant effect on Autism Quotient, ADHD, systemizing quotient, video gaming and indiviadually sex has a significant effect on all of these parameters but when the  model is derived by summing all these factor, sex doesn't seem to have a significant effect
 ## Week 2
 
 TBA
